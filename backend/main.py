@@ -26,7 +26,7 @@ app = FastAPI(title="AI Talking Avatar API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_origin_regex=r"http://localhost:\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -180,7 +180,7 @@ async def generate_video(
             "--source_image", str(image_path),
             "--result_dir", str(OUTPUTS_DIR),
             "--still",
-            "--preprocess", "crop",
+            "--preprocess", "full",
             "--batch_size", "1",
         ]
         logger.error("DEBUG sadtalker_cmd: %s", sadtalker_cmd)
@@ -201,9 +201,29 @@ async def generate_video(
                 detail="Lip-sync succeeded but output MP4 was not found.",
             )
         sadtalker_output = max(new_mp4s, key=lambda f: f.stat().st_mtime)
-        # Rename to job_id for consistent URL
+        # Re-encode to h264 for browser compatibility
+        # (--preprocess full produces mpeg4/mp4v which browsers cannot decode)
         output_mp4 = OUTPUTS_DIR / f"{job_id}.mp4"
-        sadtalker_output.rename(output_mp4)
+        import imageio_ffmpeg as _iio_ffmpeg
+        ffmpeg_exe = _iio_ffmpeg.get_ffmpeg_exe()
+        reenc_cmd = [
+            ffmpeg_exe,
+            "-i", str(sadtalker_output),
+            "-c:v", "libx264",
+            "-preset", "fast",
+            "-crf", "23",
+            "-c:a", "aac",
+            "-movflags", "+faststart",
+            str(output_mp4),
+            "-y",
+        ]
+        retcode_enc, _, stderr_enc = await run_subprocess(reenc_cmd)
+        sadtalker_output.unlink(missing_ok=True)
+        if retcode_enc != 0:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Video re-encoding failed: {stderr_enc.strip()}",
+            )
 
         return JSONResponse(
             content={
