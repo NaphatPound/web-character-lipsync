@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 255, 255, 255;
+  --background-start: 15, 10, 30;
+  --background-end: 9, 9, 20;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+    to bottom,
+    rgb(var(--background-start)),
+    rgb(var(--background-end))
+  );
+  min-height: 100vh;
+}
+
+/* Drag-and-drop active glow */
+.drop-active {
+  @apply border-violet-400 bg-violet-950/30 shadow-[0_0_20px_rgba(124,58,237,0.3)];
+}
