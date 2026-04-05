@@ -6,7 +6,7 @@ import ImageUpload from "@/components/ImageUpload";
 import TextInput from "@/components/TextInput";
 import VideoPlayer from "@/components/VideoPlayer";
 import VoiceSettings from "@/components/VoiceSettings";
-import { generateVideo, getVideoUrl } from "@/lib/api";
+import { generateVideo, generateDialog, getVideoUrl } from "@/lib/api";
 
 export default function Home() {
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -15,8 +15,22 @@ export default function Home() {
   const [status, setStatus] = useState<GenerateStatus>("idle");
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isGeneratingDialog, setIsGeneratingDialog] = useState(false);
 
   const isProcessing = ["uploading", "tts", "lipsync"].includes(status);
+
+  const handleGenerateDialog = async (topic: string) => {
+    setIsGeneratingDialog(true);
+    setErrorMessage(null);
+    try {
+      const dialog = await generateDialog(topic, voice);
+      setTextPrompt(dialog);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Failed to generate dialog.");
+    } finally {
+      setIsGeneratingDialog(false);
+    }
+  };
 
   const handleGenerate = async () => {
     setErrorMessage(null);
@@ -75,6 +89,8 @@ export default function Home() {
                 value={textPrompt}
                 onChange={setTextPrompt}
                 disabled={isProcessing}
+                onGenerate={handleGenerateDialog}
+                isGenerating={isGeneratingDialog}
               />
               <VoiceSettings
                 value={voice}

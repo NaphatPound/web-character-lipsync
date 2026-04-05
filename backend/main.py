@@ -283,6 +283,86 @@ async def health_check():
     return {"status": "ok", "message": "AI Talking Avatar API is running"}
 
 
+@app.post("/generate-dialog")
+async def generate_dialog(
+    topic: str = Form(""),
+    voice: str = Form("th-TH-PremwadeeNeural"),
+):
+    """
+    Use local Ollama to generate a short character dialogue.
+    - topic: optional hint (e.g. "greet the player", "explain the quest")
+    - voice: used to determine output language (th-TH → Thai, others → English)
+    """
+    ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
+    model = os.getenv("OLLAMA_MODEL", "glm-4.7-flash:latest")
+
+    is_thai = voice.startswith("th-TH")
+    lang = "Thai" if is_thai else "English"
+
+    if topic.strip():
+        user_msg = (
+            f"Write a short character dialogue in {lang} (2–4 sentences, max 300 characters) "
+            f"about: {topic.strip()}. "
+            f"Output ONLY the dialogue text, no labels, no quotes, no explanation."
+        )
+    else:
+        user_msg = (
+            f"Write a short, natural character dialogue in {lang} (2–4 sentences, max 300 characters). "
+            f"It can be a greeting, a story hint, or a lively comment. "
+            f"Output ONLY the dialogue text, no labels, no quotes, no explanation."
+        )
+
+    try:
+        async with httpx.AsyncClient(timeout=300) as client:
+            resp = await client.post(
+                f"{ollama_url}/v1/chat/completions",
+                headers={"Content-Type": "application/json"},
+                json={
+                    "model": model,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are a creative writer for animated characters. "
+                                "Always reply with ONLY the requested dialogue — no preamble, "
+                                "no markdown, no quotation marks around the whole text."
+                            ),
+                        },
+                        {"role": "user", "content": user_msg},
+                    ],
+                    "temperature": 0.85,
+                    "max_tokens": 2000,
+                    "stream": False,
+                },
+            )
+
+        if resp.status_code != 200:
+            raise HTTPException(status_code=502, detail=f"Ollama error: {resp.text[:200]}")
+
+        msg = resp.json()["choices"][0]["message"]
+        dialog = (msg.get("content") or "").strip()
+
+        # thinking models put final answer in content; reasoning in `reasoning`
+        if not dialog:
+            reasoning = msg.get("reasoning", "")
+            # extract last non-empty paragraph from reasoning as fallback
+            lines = [l.strip() for l in reasoning.split("\n") if l.strip()]
+            dialog = lines[-1] if lines else ""
+
+        if not dialog:
+            raise HTTPException(status_code=500, detail="Model returned empty dialog")
+
+        # Trim to 500 chars (textarea limit)
+        dialog = dialog[:500]
+        return JSONResponse(content={"dialog": dialog})
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("generate_dialog error: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @app.post("/generate-video")
 async def generate_video(
     image_file: UploadFile = File(...),
